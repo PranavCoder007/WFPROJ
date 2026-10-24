@@ -44,7 +44,67 @@ This application exclusively analyzes national-level actuals and forecasts publi
 
 ---
 
-## 4. Directory & File Structure
+## 4. Architecture & System Design
+
+The platform follows a decoupled, cloud-native microservices architecture designed for sub-second analytical queries and high availability:
+
+```
+                  +-------------------------------------------------------------+
+                  |                 ELEXON BMRS DATA SOURCE                     |
+                  |  - FUELHH (Half-hourly Actuals, fuelType='WIND')           |
+                  |  - WINDFOR (Day-Ahead & Intraday Forecasts with publishTime)|
+                  +------------------------------+------------------------------+
+                                                 | (REST Streams / JSON)
+                                                 v
++-----------------------------------------------------------------------------------------------+
+|                                    BACKEND SERVICE (FastAPI)                                  |
+|                                                                                               |
+|  +-----------------------+     +------------------------+     +----------------------------+  |
+|  |     Elexon Client     | --> |     Matching Engine    | --> |       Metrics Engine       |  |
+|  | Ingestion, Caching,   |     | D-1 11:00 GMT Gate     |     | MAE, RMSE, Mean Bias, WAPE |  |
+|  | Data Validation       |     | Cutoff, 30-to-60m res  |     | Quantiles (P5-P95), Diurnal|  |
+|  +-----------------------+     +-----------+------------+     +--------------+-------------+  |
+|                                            |                                 |                |
+|                                            v                                 v                |
+|                               +----------------------------+   +---------------------------+  |
+|                               |     Procurement Engine     |   |       REST API Layer      |  |
+|                               | Thermal Buffer Optimizer,  |   | /api/overview, /forecasts |  |
+|                               | Imbalance Cash-out Models  |   | /api/metrics, /procurement|  |
+|                               +----------------------------+   +-------------+-------------+  |
++------------------------------------------------------------------------------|----------------+
+                                                                               | JSON via HTTP
+                                                                               v
++-----------------------------------------------------------------------------------------------+
+|                                    FRONTEND SERVICE (React 19)                                |
+|                                                                                               |
+|  +-----------------------------------------------------------------------------------------+  |
+|  |                     Dual-Mode API Service (FastAPI Client + Fallback)                   |  |
+|  +--------------------------------------------+--------------------------------------------+  |
+|                                               |                                               |
+|       +-------------------+-------------------+--------------------+------------------+       |
+|       v                   v                   v                    v                  v       |
+|  +-----------+     +-------------+     +--------------+     +-------------+    +----------+   |
+|  | Day-Ahead |     | Quantitative|     | Forecast     |     | Procurement |    | Customer |   |
+|  | Timeseries|     | Error Stats |     | Evolution    |     | Risk Engine |    | & Tech   |   |
+|  | & Residual|     | & Diurnal   |     | (Lead Time)  |     | (Hedging)   |    | Modals   |   |
+|  +-----------+     +-------------+     +--------------+     +-------------+    +----------+   |
++-----------------------------------------------------------------------------------------------+
+```
+
+### Key Architectural Highlights:
+1. **Gate Closure Temporal Isolator**:
+   Ensures zero lookahead leakage by filtering forecasts published strictly prior to $D-1$ 11:00 GMT (`publishTime <= D-1T11:00:00Z`).
+2. **Settlement Resolution Reconciler**:
+   Converts Elexon half-hour settlement periods ($SP_1, SP_2$) into standard hourly blocks using time-weighted energy balance equations:
+   $$\text{Actual}_{\text{Hour}} = \frac{\text{Gen}_{SP1} + \text{Gen}_{SP2}}{2}$$
+3. **Dual-Mode Client-Side Failover Engine**:
+   When deployed in serverless environments (e.g., Vercel) where persistent Python processes are restricted, the browser-side data engine in `api.js` automatically executes all statistical distributions, diurnal groupings, and procurement simulations in-memory using bundled JSON data.
+4. **Isolated Dockerized Topology**:
+   Orchestrated via Docker Compose with dedicated networks, containerized health probes, and reverse proxying through Nginx.
+
+---
+
+## 5. Directory & File Structure
 
 ```
 Gridbricks/
