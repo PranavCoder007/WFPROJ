@@ -228,3 +228,8 @@ In compliance with the project guidelines, AI tools (including Google DeepMind A
 - Generating boilerplate schemas, Docker configurations, and unit tests.
 - Assisting in the mathematical verification of statistical error metrics.
 All domain business logic, Elexon data integration, gate closure cutoff filtering, and financial simulation mechanics were reviewed, tested, and validated for correctness.
+
+---
+# LIVE DEMO LINK:
+
+https://wfproject-rust.vercel.app/
